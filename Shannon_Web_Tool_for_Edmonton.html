@@ -1,0 +1,1419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>Shannon Webmap Tool for Edmonton</title>
+  <link rel="stylesheet" href="https://js.arcgis.com/4.32/esri/themes/light/main.css" />
+  <script src="https://js.arcgis.com/4.32/"></script>
+  <style>
+    html, body, #viewDiv { margin: 0; padding: 0; height: 100%; width: 100%; }
+    body { box-sizing: border-box; }
+    #appContainer { display: flex; flex-direction: column; height: 100vh; width: 100vw; }
+    #toolbox { display: flex; flex-direction: row; align-items: center; background: #fff; border-bottom: 1px solid #ccc; padding: 4px 8px; gap: 8px; z-index: 10; height: 44px; min-height: 36px; max-height: 48px; box-shadow: 0 2px 4px rgba(0,0,0,0.03); position: relative; }
+    #toolbox button { background: #f8f8f8; border: 1px solid #ccc; border-radius: 4px; padding: 6px 14px; font-size: 14px; cursor: pointer; transition: background 0.2s; }
+    #toolbox button.active, #toolbox button:focus { background: #e0eaff; border-color: #7dafff; outline: none; }
+    #mainContent { flex: 1; display: flex; flex-direction: row; min-height: 0; min-width: 0; }
+    #viewDiv { flex: 1; min-width: 0; min-height: 0; position: relative; z-index: 1; }
+  #manipulator { width: 420px; max-width: 90vw; background: #fff; border-left: 1px solid #ccc; box-shadow: -2px 0 6px rgba(0,0,0,0.04); display: none; flex-direction: column; align-items: stretch; padding: 0; z-index: 10; min-width: 300px; transition: width 0.2s; overflow-y: auto; }
+    .tool-panel, .dialog-panel { display: none; flex: 0 0 auto; padding: 16px 14px 14px 14px; border-bottom: 1px solid #eee; background: #fff; }
+    .tool-panel.active, .dialog-panel.active { display: block; }
+    .dialog-panel { background: #f7faff; border-left: 4px solid #7dafff; margin-bottom: 8px; }
+    .panel-title { font-weight: bold; font-size: 16px; margin-bottom: 8px; color: #1a3a5b; }
+    @media (max-width: 900px) { #manipulator { width: 200px; min-width: 120px; } #toolbox { font-size: 13px; } }
+    #legendContainer_2, #pinsLegendContainer, #layersLegendContainer, #zoningFilterOptions { max-width: 100%; min-width: 250px; max-height: 350px; overflow-y: auto; overflow-x: auto; }
+    #filterContainer label { display: block; }
+    #layerToggles label { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-weight: bold; }
+    #transparencyContainer label { font-weight: bold; }
+    #transparencyContainer input[type="range"] { width: 100%; }
+  </style>
+</head>
+<body>
+  <div id="appContainer">
+    <div id="toolbox">
+      <button id="measureButton">Measure</button>
+      <button id="layersButton">Layers</button>
+      <button id="transparencyButton">Zone Transparency</button>
+      <button id="pinsButton">Billboard Pins</button>
+      <button id="filterButton">Filter by Zone</button>
+      <button id="EdmontonLayerButton">Hide Edmonton Zoning</button>
+      <button id="legendToggleButton2">Open Edmonton Zoning Legend</button>
+      <button id="searchButton">Search</button>
+      <button id="suitabilityButton">Suitability</button>
+      <button id="saveLoadButton">Save/Load</button>
+    </div>
+    <div id="mainContent">
+      <div id="viewDiv"></div>
+      <div id="manipulator">
+        <div id="measurePanel" class="tool-panel">
+          <div class="panel-title">Measure</div>
+          <p>Click on the map to start measuring distance.</p>
+        </div>
+        <div id="measureResultPanel" class="dialog-panel">
+          <div class="panel-title">Measurement Results</div>
+          <div id="measureResults"></div>
+        </div>
+        <div id="layersPanel" class="tool-panel">
+          <div class="panel-title">Layers</div>
+          <div id="layerToggles"></div>
+          <div id="parcelsStatus" style="font-size: 12px; color: #555; margin-bottom: 8px;"></div>
+          <div class="panel-title" style="margin-top: 12px;">Legend</div>
+          <div id="layersLegendContainer"></div>
+        </div>
+        <div id="transparencyPanel" class="tool-panel">
+          <div class="panel-title">Edmonton Zoning</div>
+          <div id="transparencyContainer2">
+            <label for="opacitySlider2">Edmonton Zoning Opacity: <span id="opacityValue2">1</span></label>
+            <input type="range" id="opacitySlider2" min="0" max="1" step="0.1" value="1" />
+          </div>
+        </div>
+        <div id="zoningLegendPanel" class="tool-panel">
+          <div class="panel-title">Edmonton Zoning Group Legend</div>
+          <div id="legendContainer_2"></div>
+        </div>
+        <div id="pinsPanel" class="tool-panel">
+          <div class="panel-title">Billboard Pins Legend</div>
+          <button id="togglePinsLayerButton">Hide</button>
+          <button id="togglePinArrowsButton">Hide Arrows</button>
+          <div id="pinsLegendContainer"></div>
+        </div>
+        <div id="filterPanel" class="tool-panel">
+          <div class="panel-title">Filter by Zone</div>
+          <div id="filterContainer">
+            <strong>Select Edmonton zone:</strong>
+            <div id="zoningFilterOptions"></div>
+            <button id="applyZoningFilter">Apply</button>
+            <button id="clearZoningFilter">Clear</button>
+            <button id="restrictedZonesFilter">Subject to Restrictions</button>
+          </div>
+        </div>
+        <div id="searchPanel" class="tool-panel">
+          <div class="panel-title">Search</div>
+          <div id="searchWidget"></div>
+        </div>
+        <div id="suitabilityPanel" class="tool-panel">
+          <div class="panel-title">Suitability Layers</div>
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div>
+              <div style="font-weight: bold; margin-bottom: 4px;">Billboard Pins Buffer</div>
+              <div style="margin-left: 28px; margin-top: 4px;">
+                <label style="font-size: 11px; color: #555;">Opacity: <span id="pinsBufferOpacityValue">1.0</span></label>
+                <input type="range" id="pinsBufferOpacitySlider" min="0" max="1" step="0.1" value="1.0" style="width: 100%;">
+              </div>
+              <div style="margin-left: 28px; margin-top: 8px; padding: 8px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px;">
+                <label style="font-size: 11px; font-weight: bold; color: #333;">Buffer distance</label>
+                <div style="display: flex; gap: 4px; align-items: center; margin-top: 4px;">
+                  <input type="number" id="pinsBufferInput" placeholder="Buffer (m)" min="0" step="1" style="width: 90px; padding: 4px; font-size: 12px; border: 1px solid #ccc; border-radius: 3px;">
+                  <span style="font-size: 11px; color: #666;">m</span>
+                  <button id="pinsBufferBtn" style="padding: 4px 8px; font-size: 11px; cursor: pointer; background: #e8f5e8; border: 1px solid #4caf50; border-radius: 3px;">Apply</button>
+                  <button id="pinsBufferClearBtn" style="padding: 4px 8px; font-size: 11px; cursor: pointer; background: #ffeaea; border: 1px solid #f44336; border-radius: 3px;">Clear</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="saveLoadPanel" class="tool-panel">
+          <div class="panel-title">Save/Load Tools</div>
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <div>
+              <div style="font-weight: bold; margin-bottom: 8px;">Pin Drop</div>
+              <p style="font-size: 12px; color: #555; margin-bottom: 8px;">Click on the map to drop pins. Drop as many as you want.</p>
+              <button id="enablePinDropButton" style="background: #4caf50; color: white; border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer; width: 100%;">Enable Pin Drop</button>
+              <button id="clearAllPinsButton" style="background: #f44336; color: white; border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer; width: 100%; margin-top: 8px;">Clear All Pins</button>
+              <div id="pinDropStatus" style="margin-top: 8px; padding: 8px; background: #f0f0f0; border-radius: 4px; font-size: 12px; display: none;"></div>
+            </div>
+            <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #ddd;">
+              <div style="font-weight: bold; margin-bottom: 8px;">Dropped Pins</div>
+              <button id="calculatePinsButton" style="background: #2196f3; color: white; border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer; width: 100%; margin-bottom: 8px;">Calculate</button>
+              <div id="pinsListContainer" style="max-height: 400px; overflow-y: auto; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; padding: 8px;">
+                <div id="pinsListEmpty" style="text-align: center; color: #999; font-size: 12px; padding: 20px;">No pins dropped yet</div>
+                <div id="pinsList" style="display: none; flex-direction: column; gap: 8px;"></div>
+              </div>
+              <button id="saveCSVButton" style="background: #4caf50; color: white; border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer; width: 100%; margin-top: 8px;">Save as CSV</button>
+              <button id="loadCSVButton" style="background: #ff9800; color: white; border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer; width: 100%; margin-top: 8px;">Load CSV</button>
+              <input type="file" id="csvFileInput" accept=".csv" style="display: none;">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    require([
+  "esri/Map", "esri/views/MapView", "esri/layers/GeoJSONLayer", "esri/widgets/ScaleBar",
+  "esri/widgets/BasemapToggle", "esri/widgets/DistanceMeasurement2D", "esri/widgets/AreaMeasurement2D",
+  "esri/layers/CSVLayer", "esri/widgets/Legend", "esri/widgets/Search", "esri/layers/GraphicsLayer",
+  "esri/geometry/geometryEngine", "esri/Graphic", "esri/rest/locator", "esri/geometry/Point", "esri/geometry/support/webMercatorUtils"
+    ], function (
+  EsriMap, MapView, GeoJSONLayer, ScaleBar, BasemapToggle,
+  DistanceMeasurement2D, AreaMeasurement2D, CSVLayer, Legend, Search, GraphicsLayer,
+  geometryEngine, Graphic, locator, Point, webMercatorUtils
+    ) {
+      // raw.githubusercontent.com sends CORS headers; github.com/.../raw/ links do not work in browsers
+      const DATA_BASE = "https://raw.githubusercontent.com/Link0923/Edmonton/main/";
+      // The parcels file is stored with Git LFS, which raw.githubusercontent.com serves only as a pointer stub
+      const PARCELS_URL = "https://media.githubusercontent.com/media/Link0923/Edmonton/main/Edmonton_Parcels.geojson";
+
+      const civicArea = new GeoJSONLayer({
+        url: DATA_BASE + "Edmonton_Civic_Boundary.geojson",
+        title: "Civic Center Area",
+        visible: false,
+        renderer: {
+          type: "simple",
+          symbol: {
+            type: "simple-fill",
+            color: [128, 128, 128, 1
+            
+            ],
+            outline: { color: [90, 90, 90, 1], width: 1.5 }
+          }
+        }
+      });
+
+      const pinsBuffer = new GraphicsLayer({ title: "Billboard Pins Buffer" });
+      const userPinsLayer = new GraphicsLayer({ title: "User Pins" });
+
+      // Zoning colours are assigned by group so related zones share a hue
+      const zoningGroups = [
+        { name: "Residential", hue: 48, zones: ["RS", "RSF", "RSM", "RM", "RL", "RR", "HDR", "ALA", "BLMR", "BMR", "BRH", "CCHD", "CCLD", "CCMD", "CCSD", "GLD", "GLDF", "GLRA", "GMRA", "GRH", "PLD", "PRH", "RAES", "RCES", "RCRL", "RCRM", "RTCMR", "RTCR", "RVRH", "SLD", "SRA", "SRH"] },
+        { name: "Commercial", hue: 0, zones: ["CB", "CG", "CN", "CCA", "CCNC", "ASC", "AUVC", "ECB", "JAMSC", "MMS", "MRC", "RTCC", "TC-C", "MED", "GVC", "UC3ES", "AED"] },
+        { name: "Mixed Use", hue: 285, zones: ["MU", "MUN", "RMU", "CMU", "CMUV", "CPMU", "CPT", "MMUT", "TC-MU", "UW"] },
+        { name: "Industrial / Business Employment", hue: 215, zones: ["IH", "IM", "BE", "EETC", "EETIM", "EETL", "EETM", "EETR", "EIB", "EIM", "IBES", "ILES"] },
+        { name: "Parks / River Valley / Natural Areas", hue: 130, zones: ["A", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "NA", "PS", "PSN", "NSRVES", "BP"] },
+        { name: "Agriculture / Future Development", hue: 85, zones: ["AG", "AES", "FD"] },
+        { name: "Institutional / Utility / Other", hue: 190, zones: ["UI", "UF", "PU", "AJ", "HA"] },
+        { name: "Direct Control", hue: 330, zones: ["DC", "DC/INDES", "DC1", "DC2"] }
+      ];
+
+      function hslToHex(h, s, l) {
+        s /= 100; l /= 100;
+        const k = n => (n + h / 30) % 12;
+        const a = s * Math.min(l, 1 - l);
+        const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+        return "#" + [f(0), f(8), f(4)].map(x => Math.round(x * 255).toString(16).padStart(2, "0")).join("");
+      }
+
+      zoningGroups.forEach(group => {
+        group.color = hslToHex(group.hue, 70, 50);
+        group.zoneColors = group.zones.map((zone, i) => ({ zone, color: hslToHex(group.hue, 70, 38 + (i % 5) * 7) }));
+      });
+
+      const zoningPopupContent = feature => {
+        const attrs = feature.graphic.attributes;
+        const div = document.createElement("div");
+        const description = document.createElement("p");
+        description.textContent = attrs.DESCRIPTION || "";
+        div.appendChild(description);
+        if (attrs.DOCUMENT_URL) {
+          const info = document.createElement("p");
+          info.appendChild(document.createTextNode("Additional info: "));
+          const link = document.createElement("a");
+          link.href = attrs.DOCUMENT_URL;
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.textContent = attrs.DOCUMENT_URL;
+          info.appendChild(link);
+          div.appendChild(info);
+        }
+        return div;
+      };
+
+      const edmontonZoning = new GeoJSONLayer({
+        url: DATA_BASE + "Edmonton_Zoning.geojson",
+        title: "Edmonton Zoning Overlay",
+        outFields: ["ZONING", "DESCRIPTION", "DOCUMENT_URL"],
+        popupTemplate: {
+          title: "{ZONING}",
+          outFields: ["ZONING", "DESCRIPTION", "DOCUMENT_URL"],
+          content: zoningPopupContent
+        },
+        labelingInfo: [{
+          labelExpressionInfo: { expression: "$feature.ZONING" },
+          symbol: {
+            type: "text",
+            color: "#222",
+            haloColor: "#fff",
+            haloSize: "1px",
+            font: { size: 12, family: "Arial", weight: "bold" }
+          },
+          labelPlacement: "always-horizontal"
+        }],
+        labelsVisible: true,
+        renderer: {
+          type: "unique-value",
+          field: "ZONING",
+          defaultSymbol: { type: "simple-fill", color: "#BDBEBE", outline: { color: [0, 0, 0, 1], width: 0.5 } },
+          defaultLabel: "Other",
+          uniqueValueInfos: zoningGroups.flatMap(group => group.zoneColors.map(({ zone, color }) => ({
+            value: zone,
+            label: zone,
+            symbol: { type: "simple-fill", color, outline: { color: [0, 0, 0, 1], width: 0.5 } }
+          })))
+        }
+      });
+
+      const roadPopup = { title: "{STREET_NAME_FULL}", outFields: ["STREET_NAME_FULL"] };
+      const roadRenderer = (color, width) => ({
+        type: "simple",
+        symbol: { type: "simple-line", color, width }
+      });
+      const majorArterial = new GeoJSONLayer({
+        url: DATA_BASE + "Major_Arterial.geojson",
+        title: "Major Arterial",
+        visible: false,
+        outFields: ["STREET_NAME_FULL"],
+        popupTemplate: roadPopup,
+        renderer: roadRenderer("#E60000", 4)
+      });
+      const arterial = new GeoJSONLayer({
+        url: DATA_BASE + "Arterial.geojson",
+        title: "Arterial",
+        visible: false,
+        outFields: ["STREET_NAME_FULL"],
+        popupTemplate: roadPopup,
+        renderer: roadRenderer("#FF8C00", 3)
+      });
+
+      // Parcels only draw at 1:2000 or closer (about a 2000 ft wide view)
+      const PARCEL_MIN_SCALE = 2000;
+      const parcels = new GeoJSONLayer({
+        url: PARCELS_URL,
+        title: "Parcels",
+        minScale: PARCEL_MIN_SCALE,
+        outFields: ["ID", "BESTADDRESS", "NEIGHBOURHOOD_NAME", "WARD_NAME"],
+        popupTemplate: {
+          title: "{ID}",
+          content: [{
+            type: "fields",
+            fieldInfos: [
+              { fieldName: "BESTADDRESS", label: "Address" },
+              { fieldName: "NEIGHBOURHOOD_NAME", label: "Neighborhood" },
+              { fieldName: "WARD_NAME", label: "Ward" }
+            ]
+          }]
+        },
+        renderer: {
+          type: "simple",
+          symbol: {
+            type: "simple-fill",
+            color: [255, 255, 255, 0.5],
+            outline: { color: [255, 255, 255, 1], width: 2 }
+          }
+        }
+      });
+
+      // The file only contains PROVINCIAL ROADWAY today; the other classes are styled in case they are added later
+      const highwayClassStyles = [
+        { value: "PROVINCIAL ROADWAY", color: "#FF00C5" }
+      ];
+      const provincialHighways = new GeoJSONLayer({
+        url: DATA_BASE + "Alberta_Provincial_Hwy.geojson",
+        title: "Provincial Highways",
+        visible: false,
+        outFields: ["ADMINISTRATIVE_CLASS_DESC", "ROAD_NO", "CONTROL_SECTION_LANDMARK"],
+        popupTemplate: {
+          title: "{ADMINISTRATIVE_CLASS_DESC}",
+          content: [{
+            type: "fields",
+            fieldInfos: [
+              { fieldName: "ROAD_NO", label: "Road" },
+              { fieldName: "CONTROL_SECTION_LANDMARK", label: "Landmark" }
+            ]
+          }]
+        },
+        renderer: {
+          type: "unique-value",
+          field: "ADMINISTRATIVE_CLASS_DESC",
+          uniqueValueInfos: highwayClassStyles.map(({ value, color }) => ({
+            value,
+            label: value,
+            symbol: { type: "simple-line", color, width: 2.5 }
+          }))
+        }
+      });
+
+      const mapLayers = [
+        { layer: edmontonZoning, label: "Edmonton Zoning Overlay" },
+        { layer: parcels, label: "Parcels (visible when zoomed in at 20M scale)" },
+        { layer: majorArterial, label: "Major Arterial" },
+        { layer: arterial, label: "Arterial" },
+        { layer: provincialHighways, label: "Provincial Highways" },
+        { layer: civicArea, label: "Civic Center Area" }
+      ];
+
+      // Parcels are a very large file, so they are only added to the map (and downloaded) once the view is close enough
+      const lazyLayers = new Set([parcels]);
+
+      // Add error handling for all layers
+      mapLayers.forEach(({ layer }, index) => {
+        if (lazyLayers.has(layer)) return;
+        layer.when(
+          function() {
+            console.log(`Layer ${index} (${layer.title}) loaded successfully`);
+          },
+          function(error) {
+            console.error(`Failed to load layer ${index} (${layer.title}):`, error.message || error, error.details || "");
+            showLayerLoadWarning(layer.title);
+          }
+        );
+      });
+
+      const failedLayers = [];
+      function showLayerLoadWarning(title) {
+        failedLayers.push(title);
+        let banner = document.getElementById("layerLoadWarning");
+        if (!banner) {
+          banner = document.createElement("div");
+          banner.id = "layerLoadWarning";
+          banner.style.cssText = "position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:20;max-width:80%;padding:10px 14px;background:#fff3e0;border:1px solid #e65100;border-radius:4px;color:#7a2e00;font:13px Arial,sans-serif;";
+          document.getElementById("viewDiv").appendChild(banner);
+        }
+        banner.textContent = `These layers failed to load: ${failedLayers.join(", ")}. See the browser console for details.`;
+      }
+
+      const map = new EsriMap({ basemap: "hybrid" });
+      map.add(edmontonZoning);
+      map.add(civicArea);
+      map.add(provincialHighways);
+      map.add(arterial);
+      map.add(majorArterial);
+      map.add(pinsBuffer);
+      map.add(userPinsLayer);
+      const view = new MapView({ container: "viewDiv", map: map, center: [-113.4938, 53.5461], zoom: 11 });
+
+      function setParcelsStatus(text) {
+        document.getElementById("parcelsStatus").textContent = text;
+      }
+      let parcelsRequested = false;
+      view.watch("scale", scale => {
+        if (parcelsRequested || scale > PARCEL_MIN_SCALE) return;
+        parcelsRequested = true;
+        setParcelsStatus("Loading parcels (large file, this can take a while)...");
+        map.add(parcels, 1);
+        parcels.when(
+          () => setParcelsStatus(""),
+          error => {
+            console.error("Failed to load parcels:", error);
+            setParcelsStatus("Parcels failed to load. Check your connection and the browser console.");
+            showLayerLoadWarning("Parcels");
+          }
+        );
+      });
+      let EdmontonLayerButton = true;
+
+      view.ui.add(new ScaleBar({ view, unit: "metric" }), "bottom-left");
+      view.ui.add(new BasemapToggle({ view, nextBasemap: "streets-vector" }), "top-left");
+      const distanceMeasurement2D = new DistanceMeasurement2D({ view, visible: false });
+      const areaMeasurement2D = new AreaMeasurement2D({ view, visible: false });
+      view.ui.add(distanceMeasurement2D, "top-right");
+      view.ui.add(areaMeasurement2D, "top-right");
+
+      // Create Search widget
+      const searchWidget = new Search({
+        view: view,
+        container: "searchWidget"
+      });
+
+      const billboardCsvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT0nYHkzHIPBOL4XQ1YQ8C2FKPn_GHSsFpFHoWFDg0V8sGedIHmZJvzo9MRY5fRzWQZxiBaBZYOvSxF/pub?gid=191524558&single=true&output=csv";
+      const pins = new CSVLayer({
+      url: billboardCsvUrl,
+      latitudeField: "Latitude",
+      longitudeField: "Longitude",
+      title: "Billboards",
+      popupTemplate: {
+        title: "{Product}",
+        content: [{
+          type: "fields",
+          fieldInfos: [
+            { fieldName: "Location Name", label: "Location" },
+            { fieldName: "Facing Direction", label: "Direction" },
+            { fieldName: "Illumination Status", label: "Illumination" }
+          ]
+        }]
+      },
+      renderer: {
+        type: "unique-value",
+        field: "Product",
+        uniqueValueInfos: [
+          { value: "Digital", symbol: { type: "simple-marker", color: "#FF0000", size: "12px", outline: { color: "#00FF00", width: 2 } } },
+          { value: "Static", symbol: { type: "simple-marker", color: "#00FF00", size: "12px", outline: { color: "#FF0000", width: 2 } } }
+        ]
+      }
+      });
+
+      // Direction arrows drawn next to each billboard pin
+      const pinArrowsLayer = new GraphicsLayer({ title: "Billboard Pin Arrows", listMode: "hide" });
+      const directionAngles = {
+        N: 0, NNE: 22.5, NE: 45, ENE: 67.5, E: 90, ESE: 112.5, SE: 135, SSE: 157.5,
+        S: 180, SSW: 202.5, SW: 225, WSW: 247.5, W: 270, WNW: 292.5, NW: 315, NNW: 337.5
+      };
+
+      function parseCsvRows(text) {
+        const rows = [];
+        let row = [], cell = "", inQuotes = false;
+        for (let i = 0; i < text.length; i++) {
+          const c = text[i];
+          if (inQuotes) {
+            if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+            else if (c === '"') inQuotes = false;
+            else cell += c;
+          } else if (c === '"') inQuotes = true;
+          else if (c === ",") { row.push(cell); cell = ""; }
+          else if (c === "\n" || c === "\r") {
+            if (c === "\r" && text[i + 1] === "\n") i++;
+            row.push(cell); cell = "";
+            if (row.some(v => v.trim() !== "")) rows.push(row);
+            row = [];
+          } else cell += c;
+        }
+        if (inQuotes) throw new Error("Unterminated quoted CSV field.");
+        if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+        return rows;
+      }
+
+      // Reads a published CSV directly so arrows don't depend on CSVLayer field naming
+      async function loadCsvPoints(url) {
+        const text = await (await fetch(url)).text();
+        const rows = parseCsvRows(text);
+        const headers = rows.shift().map(h => h.trim());
+        return rows.map(r => {
+          const o = {};
+          headers.forEach((h, i) => o[h] = (r[i] || "").trim());
+          o.lon = parseFloat(o.Longitude);
+          o.lat = parseFloat(o.Latitude);
+          return o;
+        }).filter(o => !isNaN(o.lon) && !isNaN(o.lat));
+      }
+
+      loadCsvPoints(billboardCsvUrl).then(rows => {
+        const arrows = [];
+        rows.forEach(a => {
+          const dir = String(a["Facing Direction"] || "").trim().toUpperCase();
+          if (!(dir in directionAngles)) return;
+          const angle = directionAngles[dir];
+          const rad = angle * Math.PI / 180;
+          const isDigital = String(a.Product || "").trim().toLowerCase() === "digital";
+          arrows.push(new Graphic({
+            geometry: { type: "point", longitude: a.lon, latitude: a.lat },
+            attributes: a,
+            symbol: {
+              type: "simple-marker",
+              style: "path",
+              path: "M0,-9 L5,3 L0,0 L-5,3 Z",
+              color: isDigital ? "#00A000" : "#E00000",
+              outline: { color: "#ffffff", width: 0.75 },
+              size: 14,
+              angle: angle,
+              xoffset: Math.sin(rad) * 14,
+              yoffset: Math.cos(rad) * 14
+            }
+          }));
+        });
+        pinArrowsLayer.addMany(arrows);
+      }).catch(e => console.error("Error building direction arrows:", e));
+
+      // Zoning is filtered by the legend groups and the zone filter together
+      let legendClause = null;
+      let filterClause = null;
+      const sqlList = values => values.map(v => `'${String(v).replace(/'/g, "''")}'`).join(",");
+
+      function updateZoningDefinitionExpression() {
+        const clauses = [legendClause, filterClause].filter(Boolean);
+        edmontonZoning.definitionExpression = clauses.length > 0 ? clauses.join(" AND ") : "1=1";
+      }
+
+      function renderZoningLegend() {
+        const container = document.getElementById("legendContainer_2");
+        container.innerHTML = zoningGroups.map((group, i) => `
+          <div style="display:flex;align-items:center;margin-bottom:8px;">
+            <span style="display:inline-block;width:22px;height:22px;background:${group.color};border:1px solid #444;margin-right:8px;"></span>
+            <label style="display:flex;align-items:center;gap:4px;">
+              <input type="checkbox" class="zoning-class-toggle" value="${i}" checked>
+              <span style="font-weight:bold;">${group.name}</span>
+            </label>
+          </div>
+        `).join("") + `
+          <div style="display:flex;align-items:center;margin-bottom:8px;">
+            <span style="display:inline-block;width:22px;height:22px;background:#BDBEBE;border:1px solid #444;margin-right:8px;"></span>
+            <label style="display:flex;align-items:center;gap:4px;">
+              <input type="checkbox" class="zoning-class-toggle" value="other" checked>
+              <span style="font-weight:bold;">Other</span>
+            </label>
+          </div>
+        `;
+      }
+
+      document.getElementById("legendContainer_2").addEventListener("change", function() {
+        const boxes = Array.from(this.querySelectorAll(".zoning-class-toggle"));
+        const unchecked = boxes.filter(cb => !cb.checked);
+        const otherChecked = boxes.find(cb => cb.value === "other").checked;
+        const groupZones = cbs => cbs.filter(cb => cb.value !== "other").flatMap(cb => zoningGroups[Number(cb.value)].zones);
+        if (unchecked.length === 0) legendClause = null;
+        else if (otherChecked) legendClause = `ZONING NOT IN (${sqlList(groupZones(unchecked))})`;
+        else {
+          const shown = groupZones(boxes.filter(cb => cb.checked));
+          legendClause = shown.length > 0 ? `ZONING IN (${sqlList(shown)})` : "1=0";
+        }
+        updateZoningDefinitionExpression();
+      });
+
+      renderZoningLegend();
+
+      // Layers panel: one visibility checkbox per layer, kept in sync with layer.visible
+      const layerToggles = document.getElementById("layerToggles");
+      const billboardToggleEntry = { layer: pins, label: "Billboards" };
+      [...mapLayers, billboardToggleEntry].forEach(({ layer, label }) => {
+        const row = document.createElement("label");
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = layer.visible;
+        checkbox.addEventListener("change", () => { layer.visible = checkbox.checked; });
+        layer.watch("visible", visible => { checkbox.checked = visible; });
+        row.appendChild(checkbox);
+        row.appendChild(document.createTextNode(label));
+        layerToggles.appendChild(row);
+      });
+      let layersLegend = null;
+      document.getElementById("layersButton").addEventListener("click", function() {
+        if (!layersLegend) layersLegend = new Legend({
+          view: view,
+          container: "layersLegendContainer",
+          layerInfos: [majorArterial, arterial, provincialHighways, civicArea].map(layer => ({ layer }))
+        });
+      });
+
+      const toolboxButtons = [
+        { id: "measureButton", panel: "measurePanel" },
+        { id: "layersButton", panel: "layersPanel" },
+        { id: "transparencyButton", panel: "transparencyPanel" },
+        { id: "filterButton", panel: "filterPanel" },
+        { id: "legendToggleButton2", panel: "zoningLegendPanel" },
+        { id: "pinsButton", panel: "pinsPanel" },
+        { id: "searchButton", panel: "searchPanel" },
+        { id: "suitabilityButton", panel: "suitabilityPanel" },
+        { id: "saveLoadButton", panel: "saveLoadPanel" }
+      ];
+      toolboxButtons.forEach(({ id, panel }) => {
+        document.getElementById(id).addEventListener("click", () => {
+          const panelElem = document.getElementById(panel);
+          const btnElem = document.getElementById(id);
+          const isActive = panelElem.classList.contains('active');
+          panelElem.classList.toggle('active');
+          btnElem.classList.toggle('active');
+          // Show manipulator if any panel is active, hide if none
+          setTimeout(() => {
+            const anyActive = Array.from(document.querySelectorAll('#manipulator .tool-panel.active, #manipulator .dialog-panel.active')).length > 0;
+            document.getElementById('manipulator').style.display = anyActive ? 'flex' : 'none';
+          }, 0);
+          if (id === "measureButton") {
+            if (!isActive) setActiveWidget("distance");
+            else { setActiveWidget(null); document.getElementById("measureResultPanel").classList.remove("active"); }
+          } else setActiveWidget(null);
+        });
+      });
+      toolboxButtons.forEach(({panel, id}) => {
+  document.getElementById(panel).classList.remove('active');
+  document.getElementById(id).classList.remove('active');
+  document.getElementById('manipulator').style.display = 'none';
+      });
+      document.getElementById("measureResultPanel").classList.remove("active");
+
+      document.getElementById("EdmontonLayerButton").addEventListener("click", function() {
+        EdmontonLayerButton = !EdmontonLayerButton;
+        edmontonZoning.visible = EdmontonLayerButton;
+        this.textContent = EdmontonLayerButton ? "Hide Edmonton Zoning" : "Show Edmonton Zoning";
+      });
+
+      // Billboards and their direction arrows follow the pins layer visibility
+      let pinArrowsVisible = true;
+      function updatePinsLayer() {
+        pinArrowsLayer.visible = pins.visible && pinArrowsVisible;
+        document.getElementById("togglePinsLayerButton").textContent = pins.visible ? "Hide" : "Show";
+        document.getElementById("togglePinArrowsButton").textContent = pinArrowsVisible ? "Hide Arrows" : "Show Arrows";
+      }
+      map.addMany([pins, pinArrowsLayer], map.layers.indexOf(pinsBuffer));
+      pins.watch("visible", updatePinsLayer);
+      document.getElementById("togglePinArrowsButton").addEventListener("click", function() {
+        pinArrowsVisible = !pinArrowsVisible;
+        updatePinsLayer();
+      });
+      document.getElementById("togglePinsLayerButton").addEventListener("click", function() {
+        pins.visible = !pins.visible;
+      });
+      updatePinsLayer();
+      let pinsLegend = null;
+      document.getElementById("pinsButton").addEventListener("click", function() {
+        if (!pinsLegend) pinsLegend = new Legend({ view: view, container: "pinsLegendContainer", layerInfos: [{ layer: pins, title: "Billboards" }] });
+      });
+
+      function setActiveWidget(type) {
+        switch (type) {
+          case "distance":
+            areaMeasurement2D.visible = false;
+            distanceMeasurement2D.visible = true;
+            distanceMeasurement2D.viewModel.start();
+            break;
+          case null:
+            areaMeasurement2D.visible = false;
+            distanceMeasurement2D.visible = false;
+            break;
+        }
+      }
+      distanceMeasurement2D.watch("measurement", function(measurement) {
+        if (measurement && measurement.state === "measured") {
+          const resultsPanel = document.getElementById("measureResultPanel");
+          const resultsDiv = document.getElementById("measureResults");
+          resultsDiv.innerHTML = `
+            <div><strong>Distance:</strong> ${measurement.distance && measurement.distance.text ? measurement.distance.text : "N/A"}</div>
+            <div><strong>Unit:</strong> ${measurement.distance && measurement.distance.unit ? measurement.distance.unit : "N/A"}</div>
+          `;
+          resultsPanel.classList.add("active");
+        }
+      });
+
+      document.getElementById("opacitySlider2").addEventListener("input", function() {
+        const value = parseFloat(this.value);
+        edmontonZoning.opacity = value;
+        document.getElementById("opacityValue2").innerText = value.toFixed(1);
+      });
+
+      // Filter options are labelled "ZONING - DESCRIPTION"
+      let zoningFilterLoaded = false;
+      function updateZoningFilterOptions() {
+        if (zoningFilterLoaded) return;
+        const optionsContainer = document.getElementById("zoningFilterOptions");
+        edmontonZoning.queryFeatures({
+          where: "1=1",
+          outFields: ["ZONING", "DESCRIPTION"],
+          returnDistinctValues: true,
+          returnGeometry: false,
+          orderByFields: ["ZONING"]
+        }).then(function(result) {
+          const zones = new Map();
+          result.features.forEach(f => {
+            const { ZONING, DESCRIPTION } = f.attributes;
+            if (ZONING && !zones.has(ZONING)) zones.set(ZONING, DESCRIPTION);
+          });
+          optionsContainer.innerHTML = "";
+          zones.forEach((description, zone) => {
+            const label = document.createElement("label");
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.value = zone;
+            label.appendChild(checkbox);
+            label.appendChild(document.createTextNode(` ${zone}${description ? " - " + description : ""}`));
+            optionsContainer.appendChild(label);
+          });
+          zoningFilterLoaded = zones.size > 0;
+          if (selectedFilterZones) syncFilterChecks();
+        }).catch(error => console.error("Error loading zoning filter options:", error));
+      }
+
+      // Zones that are subject to restrictions
+      const restrictedZones = ["CG", "CB", "BE", "IM", "IH"];
+      // Zones the filter currently selects when set by a preset button; used to tick boxes that render later
+      let selectedFilterZones = null;
+      function syncFilterChecks() {
+        document.querySelectorAll('#zoningFilterOptions input').forEach(cb => {
+          cb.checked = selectedFilterZones ? selectedFilterZones.includes(cb.value) : false;
+        });
+      }
+
+      function applyZoningFilter() {
+        selectedFilterZones = null;
+        const selectedZones = Array.from(document.querySelectorAll('#zoningFilterOptions input:checked')).map(cb => cb.value);
+        filterClause = selectedZones.length > 0 ? `ZONING IN (${sqlList(selectedZones)})` : null;
+        updateZoningDefinitionExpression();
+      }
+
+      function applyRestrictedZonesFilter() {
+        selectedFilterZones = restrictedZones;
+        filterClause = `ZONING IN (${sqlList(restrictedZones)})`;
+        syncFilterChecks();
+        updateZoningDefinitionExpression();
+      }
+
+      function clearZoningFilter() {
+        selectedFilterZones = null;
+        filterClause = null;
+        syncFilterChecks();
+        updateZoningDefinitionExpression();
+      }
+
+      document.getElementById("applyZoningFilter").addEventListener("click", applyZoningFilter);
+      document.getElementById("clearZoningFilter").addEventListener("click", clearZoningFilter);
+      document.getElementById("restrictedZonesFilter").addEventListener("click", applyRestrictedZonesFilter);
+      document.getElementById("filterButton").addEventListener("click", updateZoningFilterOptions);
+
+      // Function to create buffer
+      function createBuffer(sourceLayer, bufferLayer, distance, color, opacity) {
+        bufferLayer.removeAll();
+        
+        const query = {
+          where: "1=1",
+          outFields: ["*"],
+          returnGeometry: true
+        };
+        
+        sourceLayer.queryFeatures(query).then(function(results) {
+          if (results.features.length === 0) {
+            alert("No features found to buffer.");
+            return;
+          }
+          
+          results.features.forEach(function(feature) {
+            const bufferedGeometry = geometryEngine.geodesicBuffer(feature.geometry, distance, "meters");
+            
+            const bufferGraphic = new Graphic({
+              geometry: bufferedGeometry,
+              symbol: {
+                type: "simple-fill",
+                color: color,
+                outline: {
+                  color: [0, 0, 0, 0.5],
+                  width: 1
+                }
+              }
+            });
+            
+            bufferLayer.add(bufferGraphic);
+          });
+          
+          bufferLayer.opacity = opacity;
+        }).catch(function(error) {
+          console.error("Error creating buffer:", error);
+          alert("Error creating buffer. Please try again.");
+        });
+      }
+
+      // Suitability Panel - Billboard Pins Buffer Layer Controls
+      document.getElementById("pinsBufferOpacitySlider").addEventListener("input", function() {
+        const value = parseFloat(this.value);
+        pinsBuffer.opacity = value;
+        document.getElementById("pinsBufferOpacityValue").innerText = value.toFixed(1);
+      });
+
+      // Billboard Pins Buffer
+      document.getElementById("pinsBufferBtn").addEventListener("click", function() {
+        const distance = parseFloat(document.getElementById("pinsBufferInput").value);
+        const opacity = parseFloat(document.getElementById("pinsBufferOpacitySlider").value);
+        if (!isNaN(distance) && distance > 0) {
+          createBuffer(pins, pinsBuffer, distance, [0, 255, 255, 0.4], opacity);
+        } else {
+          alert("Please enter a valid buffer distance in meters.");
+        }
+      });
+
+      document.getElementById("pinsBufferClearBtn").addEventListener("click", function() {
+        pinsBuffer.removeAll();
+        document.getElementById("pinsBufferInput").value = "";
+      });
+
+      // Save/Load Panel - Pin Drop functionality
+      let pinDropEnabled = false;
+      let pinDropHandler = null;
+      let pinCounter = 0;
+      const geocodeServiceUrl = "https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer";
+      const pinResultFields = [
+        { key: "address", label: "Address" },
+        { key: "zone", label: "Zone" },
+        { key: "distBillboard", label: "Distance to Billboard (m)" },
+        { key: "distArterial", label: "Distance to Arterial (m)" },
+        { key: "distMajorArterial", label: "Distance to Major Arterial (m)" },
+        { key: "distProvincialHwy", label: "Distance to Provincial Highway (m)" },
+        { key: "inCivicArea", label: "Civic Center Area", layer: civicArea }
+      ];
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, char => ({
+          "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+        })[char]);
+      }
+
+      function pinPopupTemplate(calculated) {
+        const fields = [
+          { fieldName: "latitude", label: "Latitude" },
+          { fieldName: "longitude", label: "Longitude" }
+        ];
+        if (calculated) {
+          pinResultFields.forEach(field => fields.push({ fieldName: field.key, label: field.label }));
+        }
+        return { title: "User Pin #{id}", content: [{ type: "fields", fieldInfos: fields }] };
+      }
+
+      function updatePinsList() {
+        const pinsListContainer = document.getElementById("pinsList");
+        const pinsListEmpty = document.getElementById("pinsListEmpty");
+        const allGraphics = userPinsLayer.graphics.toArray();
+        const graphics = allGraphics.filter(g => g.attributes.id);
+        
+        if (graphics.length === 0) {
+          pinsListEmpty.style.display = "block";
+          pinsListContainer.style.display = "none";
+          return;
+        }
+        
+        graphics.sort((a, b) => a.attributes.id - b.attributes.id);
+        
+        pinsListEmpty.style.display = "none";
+        pinsListContainer.style.display = "flex";
+        
+        pinsListContainer.innerHTML = graphics.map(graphic => {
+          const attrs = graphic.attributes;
+          const lat = attrs.latitude.toFixed(6);
+          const lon = attrs.longitude.toFixed(6);
+          
+          let calculatedInfo = '';
+          if (attrs.calculated) {
+            calculatedInfo = `
+              <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #eee;">
+                <div style="font-size: 11px; color: #666;">
+                  ${pinResultFields.map(field => `<div><strong>${escapeHtml(field.label)}:</strong> ${escapeHtml(attrs[field.key] || 'N/A')}</div>`).join("")}
+                </div>
+              </div>
+            `;
+          }
+          
+          return `
+            <div style="background: white; border: 1px solid #ddd; border-radius: 4px; padding: 8px; font-size: 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <span style="font-weight: bold; color: #7d00ff;">Pin #${attrs.id}</span>
+                <button onclick="removePinById(${attrs.id})" style="background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; border-radius: 3px; padding: 2px 6px; font-size: 10px; cursor: pointer;">Remove</button>
+              </div>
+              <div style="color: #555; line-height: 1.4;">
+                <div><strong>Lat:</strong> ${lat}</div>
+                <div><strong>Lon:</strong> ${lon}</div>
+                ${calculatedInfo}
+              </div>
+            </div>
+          `;
+        }).join("");
+      }
+      
+      window.removePinById = function(id) {
+        const graphics = userPinsLayer.graphics.toArray();
+        const graphicToRemove = graphics.find(g => g.attributes.id === id);
+        const labelToRemove = graphics.find(g => g.attributes.pinId === id);
+        if (graphicToRemove) {
+          userPinsLayer.remove(graphicToRemove);
+          if (labelToRemove) {
+            userPinsLayer.remove(labelToRemove);
+          }
+          updatePinsList();
+          const statusDiv = document.getElementById("pinDropStatus");
+          statusDiv.style.display = "block";
+          statusDiv.textContent = `Pin #${id} removed. Total pins: ${userPinsLayer.graphics.filter(g => g.attributes.id).length}`;
+          statusDiv.style.background = "#fff3e0";
+          statusDiv.style.color = "#e65100";
+        }
+      };
+
+      document.getElementById("enablePinDropButton").addEventListener("click", function() {
+        pinDropEnabled = !pinDropEnabled;
+        const statusDiv = document.getElementById("pinDropStatus");
+        const button = this;
+        
+        if (pinDropEnabled) {
+          button.textContent = "Disable Pin Drop";
+          button.style.background = "#ff9800";
+          statusDiv.style.display = "block";
+          statusDiv.textContent = "Pin drop enabled! Click on the map to place pins.";
+          statusDiv.style.background = "#e8f5e9";
+          statusDiv.style.color = "#2e7d32";
+          
+          pinDropHandler = view.on("click", function(event) {
+            event.stopPropagation();
+            pinCounter++;
+            
+            const point = event.mapPoint;
+            
+            const pinGraphic = new Graphic({
+              geometry: point,
+              symbol: {
+                type: "simple-marker",
+                style: "circle",
+                color: [255, 0, 255, 0.8],
+                size: "12px",
+                outline: {
+                  color: [255, 255, 255],
+                  width: 2
+                }
+              },
+              attributes: {
+                id: pinCounter,
+                latitude: point.latitude,
+                longitude: point.longitude
+              },
+              popupTemplate: pinPopupTemplate(false)
+            });
+            
+            const labelGraphic = new Graphic({
+              geometry: point,
+              symbol: {
+                type: "text",
+                text: `Pin #${pinCounter}`,
+                color: "#FFFFFF",
+                haloColor: "#7d00ff",
+                haloSize: "2px",
+                xoffset: 0,
+                yoffset: -15,
+                font: {
+                  size: 11,
+                  family: "Arial",
+                  weight: "bold"
+                }
+              },
+              attributes: {
+                pinId: pinCounter
+              }
+            });
+            
+            userPinsLayer.add(pinGraphic);
+            userPinsLayer.add(labelGraphic);
+            const pinCount = userPinsLayer.graphics.filter(g => g.attributes.id).length;
+            statusDiv.textContent = `Pin #${pinCounter} added! Total pins: ${pinCount}`;
+            updatePinsList();
+          });
+        } else {
+          button.textContent = "Enable Pin Drop";
+          button.style.background = "#4caf50";
+          statusDiv.style.display = "block";
+          statusDiv.textContent = "Pin drop disabled.";
+          statusDiv.style.background = "#fff3e0";
+          statusDiv.style.color = "#e65100";
+          
+          if (pinDropHandler) {
+            pinDropHandler.remove();
+            pinDropHandler = null;
+          }
+        }
+      });
+
+      document.getElementById("clearAllPinsButton").addEventListener("click", function() {
+        userPinsLayer.removeAll();
+        pinCounter = 0;
+        updatePinsList();
+        const statusDiv = document.getElementById("pinDropStatus");
+        statusDiv.style.display = "block";
+        statusDiv.textContent = "All pins cleared!";
+        statusDiv.style.background = "#ffebee";
+        statusDiv.style.color = "#c62828";
+      });
+
+      document.getElementById("calculatePinsButton").addEventListener("click", async function() {
+        const allGraphics = userPinsLayer.graphics.toArray();
+        const graphics = allGraphics.filter(g => g.attributes.id);
+        
+        if (graphics.length === 0) {
+          alert("No pins to calculate. Please drop at least one pin.");
+          return;
+        }
+        
+        const button = this;
+        button.disabled = true;
+        button.textContent = "Calculating...";
+        button.style.background = "#90caf9";
+        
+        try {
+          let hasErrors = false;
+          async function getPointFeatures(layer) {
+            try {
+              const result = await layer.queryFeatures({
+                where: "1=1",
+                outFields: [],
+                returnGeometry: true
+              });
+              return result.features;
+            } catch (error) {
+              console.error(`Error querying ${layer.title}:`, error);
+              hasErrors = true;
+              return null;
+            }
+          }
+
+          function nearestDistance(point, features) {
+            if (features === null) return "Error";
+            if (features.length === 0) return "None found";
+            let minDistance = Infinity;
+            features.forEach(feature => {
+              const target = feature.geometry;
+              if (!target || target.longitude == null || target.latitude == null) return;
+              const distance = geometryEngine.geodesicLength({
+                type: "polyline",
+                spatialReference: { wkid: 4326 },
+                paths: [[[point.longitude, point.latitude], [target.longitude, target.latitude]]]
+              }, "meters");
+              if (Number.isFinite(distance) && distance < minDistance) minDistance = distance;
+            });
+            return minDistance === Infinity ? "None found" : minDistance.toFixed(2);
+          }
+
+          const billboards = await getPointFeatures(pins);
+
+          // Line layers are queried in Web Mercator (locally conformal, so the nearest point is the true nearest),
+          // then the final distance is measured geodesically in metres
+          async function getLineFeatures(layer) {
+            try {
+              await layer.load();
+              const result = await layer.queryFeatures({
+                where: "1=1",
+                outFields: [],
+                returnGeometry: true,
+                outSpatialReference: { wkid: 102100 }
+              });
+              return result.features;
+            } catch (error) {
+              console.error(`Error querying ${layer.title}:`, error);
+              hasErrors = true;
+              return null;
+            }
+          }
+
+          function nearestLineDistance(point, features) {
+            if (features === null) return "Error";
+            if (features.length === 0) return "None found";
+            const origin = new Point({ longitude: point.longitude, latitude: point.latitude });
+            const originMercator = webMercatorUtils.geographicToWebMercator(origin);
+            let nearest = null;
+            let nearestPlanar = Infinity;
+            features.forEach(feature => {
+              if (!feature.geometry) return;
+              const hit = geometryEngine.nearestCoordinate(feature.geometry, originMercator);
+              if (hit && hit.coordinate && hit.distance < nearestPlanar) {
+                nearestPlanar = hit.distance;
+                nearest = hit.coordinate;
+              }
+            });
+            if (!nearest) return "None found";
+            const target = webMercatorUtils.webMercatorToGeographic(nearest);
+            const distance = geometryEngine.geodesicLength({
+              type: "polyline",
+              spatialReference: { wkid: 4326 },
+              paths: [[[origin.longitude, origin.latitude], [target.longitude, target.latitude]]]
+            }, "meters");
+            return Number.isFinite(distance) ? distance.toFixed(2) : "None found";
+          }
+
+          const [arterialFeatures, majorArterialFeatures, highwayFeatures] = await Promise.all([
+            getLineFeatures(arterial),
+            getLineFeatures(majorArterial),
+            getLineFeatures(provincialHighways)
+          ]);
+
+          for (const graphic of graphics) {
+            const point = graphic.geometry;
+            
+            let address = "N/A";
+            try {
+              const response = await locator.locationToAddress(geocodeServiceUrl, {
+                location: point
+              });
+              
+              if (response && response.address) {
+                address = response.address;
+              } else {
+                address = "Address not found";
+              }
+            } catch (error) {
+              console.error("Error getting address:", error);
+              hasErrors = true;
+              address = "Address lookup failed";
+            }
+            
+            let zone = "N/A";
+            try {
+              const zoneResult = await edmontonZoning.queryFeatures({
+                geometry: point,
+                spatialRelationship: "intersects",
+                outFields: ["ZONING", "DESCRIPTION"],
+                returnGeometry: false
+              });
+              if (zoneResult.features.length > 0) {
+                const { ZONING, DESCRIPTION } = zoneResult.features[0].attributes;
+                zone = ZONING ? `${ZONING}${DESCRIPTION ? " - " + DESCRIPTION : ""}` : "N/A";
+              }
+            } catch (e) {
+              console.error("Error querying zone:", e);
+              hasErrors = true;
+              zone = "Error";
+            }
+            
+            const areaResults = await Promise.all(pinResultFields.filter(field => field.layer).map(async field => {
+              try {
+                const count = await field.layer.queryFeatureCount({
+                  geometry: point,
+                  spatialRelationship: "intersects"
+                });
+                return [field.key, count > 0 ? "Yes" : "No"];
+              } catch (error) {
+                console.error(`Error querying ${field.label}:`, error);
+                hasErrors = true;
+                return [field.key, "Error"];
+              }
+            }));
+            
+            graphic.attributes.calculated = true;
+            graphic.attributes.address = address;
+            graphic.attributes.zone = zone;
+            graphic.attributes.distBillboard = nearestDistance(point, billboards);
+            graphic.attributes.distArterial = nearestLineDistance(point, arterialFeatures);
+            graphic.attributes.distMajorArterial = nearestLineDistance(point, majorArterialFeatures);
+            graphic.attributes.distProvincialHwy = nearestLineDistance(point, highwayFeatures);
+            areaResults.forEach(([key, value]) => graphic.attributes[key] = value);
+            
+            graphic.popupTemplate = pinPopupTemplate(true);
+          }
+          
+          updatePinsList();
+          
+          const statusDiv = document.getElementById("pinDropStatus");
+          statusDiv.style.display = "block";
+          statusDiv.textContent = hasErrors
+            ? "Calculation completed with errors. Check the results and console for details."
+            : "Calculation complete for all pins!";
+          statusDiv.style.background = hasErrors ? "#fff3e0" : "#e3f2fd";
+          statusDiv.style.color = hasErrors ? "#e65100" : "#1565c0";
+          
+        } catch (error) {
+          console.error("Error during calculation:", error);
+          alert("An error occurred during calculation. Check console for details.");
+        } finally {
+          button.disabled = false;
+          button.textContent = "Calculate";
+          button.style.background = "#2196f3";
+        }
+      });
+
+      document.getElementById("saveCSVButton").addEventListener("click", function() {
+        const allGraphics = userPinsLayer.graphics.toArray();
+        const graphics = allGraphics.filter(g => g.attributes.id);
+        
+        if (graphics.length === 0) {
+          alert("No pins to save. Please drop at least one pin.");
+          return;
+        }
+        
+        const csvValue = value => {
+          const text = String(value == null ? "" : value);
+          return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+        };
+        const headers = ["Pin ID", "Latitude", "Longitude", "Calculated", ...pinResultFields.map(field => field.label)];
+        let csvContent = headers.map(csvValue).join(",") + "\n";
+        
+        graphics.forEach(graphic => {
+          const attrs = graphic.attributes;
+          const row = [
+            attrs.id,
+            attrs.latitude,
+            attrs.longitude,
+            attrs.calculated ? "Yes" : "No",
+            ...pinResultFields.map(field => attrs.calculated ? (attrs[field.key] || "") : "")
+          ];
+          csvContent += row.map(csvValue).join(',') + '\n';
+        });
+        
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        const filename = `edmonton_pins_${timestamp}.csv`;
+        
+        link.setAttribute('href', url);
+        link.setAttribute('download', filename);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+        
+        const statusDiv = document.getElementById("pinDropStatus");
+        statusDiv.style.display = "block";
+        statusDiv.textContent = `CSV file saved: ${filename}`;
+        statusDiv.style.background = "#e8f5e9";
+        statusDiv.style.color = "#2e7d32";
+      });
+
+      document.getElementById("loadCSVButton").addEventListener("click", function() {
+        document.getElementById("csvFileInput").click();
+      });
+
+      document.getElementById("csvFileInput").addEventListener("change", function(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onerror = function() {
+          console.error("Error reading CSV:", reader.error);
+          alert("Error reading CSV file. Please try again.");
+          event.target.value = '';
+        };
+        reader.onload = function(e) {
+          try {
+            const rows = parseCsvRows(e.target.result);
+            if (rows.length < 2) throw new Error("CSV file has no pin data.");
+            const headers = rows.shift().map(header => header.trim().replace(/^\uFEFF/, "").toLowerCase());
+            const latitudeIndex = headers.indexOf("latitude");
+            const longitudeIndex = headers.indexOf("longitude");
+            if (latitudeIndex < 0 || longitudeIndex < 0) throw new Error("CSV must have Latitude and Longitude columns.");
+            const calculatedIndex = headers.indexOf("calculated");
+            const dataRows = rows.map((row, index) => {
+              const latText = (row[latitudeIndex] || "").trim();
+              const lonText = (row[longitudeIndex] || "").trim();
+              const lat = Number(latText);
+              const lon = Number(lonText);
+              if (!latText || !lonText || !Number.isFinite(lat) || !Number.isFinite(lon) ||
+                  lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+                throw new Error(`Invalid coordinates in CSV row ${index + 2}.`);
+              }
+              const calculatedValue = calculatedIndex < 0 ? "" : (row[calculatedIndex] || "").trim().toLowerCase();
+              if (calculatedValue && calculatedValue !== "yes" && calculatedValue !== "no") {
+                throw new Error(`Invalid Calculated value in CSV row ${index + 2}.`);
+              }
+              const attributes = { latitude: lat, longitude: lon };
+              pinResultFields.forEach(field => {
+                const fieldIndex = headers.indexOf(field.label.toLowerCase());
+                if (fieldIndex >= 0 && row[fieldIndex] != null && row[fieldIndex] !== "") {
+                  attributes[field.key] = row[fieldIndex];
+                }
+              });
+              attributes.calculated = calculatedIndex >= 0
+                ? calculatedValue === "yes"
+                : pinResultFields.some(field => attributes[field.key] && attributes[field.key] !== "N/A");
+              return attributes;
+            });
+
+            // Save existing pins before loading new ones
+            const allGraphics = userPinsLayer.graphics.toArray();
+            const existingPins = allGraphics.filter(g => g.attributes.id);
+            const existingLabels = allGraphics.filter(g => g.attributes.pinId);
+            
+            // Store existing pin data
+            const existingPinData = existingPins.map(pin => ({
+              graphic: pin,
+              geometry: pin.geometry,
+              attributes: { ...pin.attributes }
+            }));
+
+            let newPinId = 0;
+            let loadedCount = 0;
+
+            // Load new pins from CSV first
+            dataRows.forEach(attributes => {
+              newPinId++;
+
+              const point = {
+                type: "point",
+                longitude: attributes.longitude,
+                latitude: attributes.latitude
+              };
+
+              const pinGraphic = new Graphic({
+                geometry: point,
+                symbol: {
+                  type: "simple-marker",
+                  style: "circle",
+                  color: [255, 0, 255, 0.8],
+                  size: "12px",
+                  outline: {
+                    color: [255, 255, 255],
+                    width: 2
+                  }
+                },
+                attributes: { ...attributes, id: newPinId },
+                popupTemplate: pinPopupTemplate(attributes.calculated)
+              });
+
+              const labelGraphic = new Graphic({
+                geometry: point,
+                symbol: {
+                  type: "text",
+                  text: `Pin #${newPinId}`,
+                  color: "#FFFFFF",
+                  haloColor: "#7d00ff",
+                  haloSize: "2px",
+                  xoffset: 0,
+                  yoffset: -15,
+                  font: {
+                    size: 11,
+                    family: "Arial",
+                    weight: "bold"
+                  }
+                },
+                attributes: {
+                  pinId: newPinId
+                }
+              });
+
+              userPinsLayer.add(pinGraphic);
+              userPinsLayer.add(labelGraphic);
+              loadedCount++;
+            });
+
+            // Now renumber existing pins to come after loaded pins
+            existingPinData.forEach((pinData, index) => {
+              newPinId++;
+              
+              // Update the pin graphic attributes
+              pinData.graphic.attributes.id = newPinId;
+              
+              // Find and remove the old label
+              const correspondingLabel = existingLabels.find(label => 
+                label.attributes.pinId === pinData.attributes.id
+              );
+              
+              if (correspondingLabel) {
+                userPinsLayer.remove(correspondingLabel);
+                
+                // Create new label with updated number
+                const newLabelGraphic = new Graphic({
+                  geometry: pinData.geometry,
+                  symbol: {
+                    type: "text",
+                    text: `Pin #${newPinId}`,
+                    color: "#FFFFFF",
+                    haloColor: "#7d00ff",
+                    haloSize: "2px",
+                    xoffset: 0,
+                    yoffset: -15,
+                    font: {
+                      size: 11,
+                      family: "Arial",
+                      weight: "bold"
+                    }
+                  },
+                  attributes: {
+                    pinId: newPinId
+                  }
+                });
+                
+                userPinsLayer.add(newLabelGraphic);
+              }
+            });
+
+            // Update pin counter to continue from the new max
+            pinCounter = newPinId;
+
+            // Update the display
+            updatePinsList();
+
+            // Show confirmation
+            const statusDiv = document.getElementById("pinDropStatus");
+            statusDiv.style.display = "block";
+            statusDiv.textContent = `Loaded ${loadedCount} pins from CSV. ${existingPinData.length > 0 ? `Existing ${existingPinData.length} pin(s) renumbered from #${loadedCount + 1} to #${newPinId}.` : ''}`;
+            statusDiv.style.background = "#e8f5e9";
+            statusDiv.style.color = "#2e7d32";
+
+          } catch (error) {
+            console.error("Error loading CSV:", error);
+            alert(`Error loading CSV file: ${error.message}`);
+          } finally {
+            event.target.value = '';
+          }
+        };
+        reader.readAsText(file);
+      });
+    });
+  </script>
+</body>
+</html>
